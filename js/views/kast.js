@@ -1,12 +1,11 @@
 // Kledingkast: overzicht met filters, en het formulier voor één stuk.
 
 import { db, uid } from '../db.js';
-import { images } from '../images.js';
 import {
-  CATEGORIES, STATUS, COLORS, occasionName, loadWardrobe, gapInsight, deletePiece, plural, parsePrice,
+  CATEGORIES, STATUS, COLORS, occasionName, loadWardrobe, gapInsight, deletePiece, plural, parsePrice, euro,
 } from '../data.js';
-import { esc, icons, toast, pickFile, readClipboardImage, setPasteHandler, dropZone } from '../ui.js';
-import { pieceCard, backLink } from './common.js';
+import { esc, icons, toast, fmt } from '../ui.js';
+import { pieceCard, backLink, mountPhotoZone, commitPhoto, priorityControl, purchaseSheet } from './common.js';
 
 // Filter blijft bewaard zolang de app open is.
 const filter = { status: 'all', cat: 'all' };
@@ -106,7 +105,7 @@ export async function pieceEditor(id, presetStatus) {
   }
   const w = await loadWardrobe();
   const piece = existing ? { ...existing } : {
-    name: '', status: STATUS[presetStatus] ? presetStatus : 'have', category: 'overhemden',
+    name: '', status: STATUS[presetStatus] ? presetStatus : 'have', priority: 'nice', category: 'overhemden',
     color: null, brand: '', price: null, link: '', note: '', imageId: null,
   };
   const inOutfits = existing ? w.outfits.filter((o) => o.items.some((it) => it.pieceId === id)) : [];
@@ -135,6 +134,11 @@ export async function pieceEditor(id, presetStatus) {
       <div class="field">
         <span class="label">Status</span>
         <div class="segmented" role="radiogroup" aria-label="Status">${statusBtn('have')}${statusBtn('want')}${statusBtn('consider')}</div>
+      </div>
+
+      <div class="field" data-wish-only>
+        <span class="label">Prioriteit</span>
+        ${priorityControl(piece.priority || 'nice')}
       </div>
 
       <label class="field">
@@ -172,72 +176,34 @@ export async function pieceEditor(id, presetStatus) {
             : '<p class="hint">Nog in geen enkele outfit.</p>'}
         </section>
         <div class="btn-row">
+          ${existing.status !== 'have' ? `<button type="button" class="btn primary block" id="bought">Gekocht</button>` : ''}
+          ${existing.status === 'have' && existing.boughtAt ? `<p class="hint">Gekocht op ${esc(fmt.date(existing.boughtAt))}${existing.boughtPrice != null ? ` voor ${esc(euro(existing.boughtPrice))}` : ''}.</p>` : ''}
           <button type="button" class="btn block" id="pin"${onBoard ? ' disabled' : ''}>${icons.pin}${onBoard ? 'Staat op je moodboard' : 'Op moodboard zetten'}</button>
           <button type="button" class="btn block danger" id="delete">${icons.trash}Verwijderen</button>
         </div>` : ''}
     `,
-    mount(root) {
+    mount(root, { rerender }) {
       let dirty = false;
       const markDirty = () => { dirty = true; };
       root.querySelectorAll('input, textarea, select').forEach((el) => el.addEventListener('input', markDirty));
 
-      // Foto
-      const zone = root.querySelector('#photo');
-      const renderPhoto = () => {
-        const url = images.url(piece.imageId);
-        zone.classList.toggle('has-photo', !!url);
-        zone.classList.toggle('cutout', !!url && images.isCutout(piece.imageId));
-        zone.innerHTML = url
-          ? `<img src="${url}" alt="">
-             <div class="photo-tools">
-               <button type="button" class="chip on-photo" data-pick>${icons.image}Andere</button>
-               <button type="button" class="chip on-photo" data-paste>${icons.paste}Plakken</button>
-               <button type="button" class="chip on-photo" data-clear aria-label="Foto verwijderen">${icons.close}</button>
-             </div>`
-          : `<div class="empty-line">Voeg een foto toe</div>
-             <p class="hint">Houd in Foto's een kledingstuk ingedrukt, kies <b>Kopieer</b> en plak het hier. Of sleep het erheen.</p>
-             <div class="photo-actions">
-               <button type="button" class="btn small" data-pick>${icons.image}Kies foto</button>
-               <button type="button" class="btn small" data-paste>${icons.paste}Plakken</button>
-             </div>`;
-      };
-      const isTemp = (imgId) => imgId && imgId !== existing?.imageId;
-      const setImage = async (blob) => {
-        if (!blob) return;
-        zone.classList.add('busy');
-        try {
-          const newId = await images.save(blob);
-          if (isTemp(piece.imageId)) await images.remove(piece.imageId);
-          piece.imageId = newId;
-          dirty = true;
-          renderPhoto();
-        } catch (err) {
-          toast(err.message);
-        } finally {
-          zone.classList.remove('busy');
-        }
-      };
-      zone.addEventListener('click', async (e) => {
-        if (e.target.closest('[data-pick]')) setImage(await pickFile());
-        else if (e.target.closest('[data-paste]')) {
-          try { setImage(await readClipboardImage()); } catch (err) { if (err.name !== 'NotAllowedError') toast(err.message); }
-        } else if (e.target.closest('[data-clear]')) {
-          if (isTemp(piece.imageId)) await images.remove(piece.imageId);
-          piece.imageId = null;
-          dirty = true;
-          renderPhoto();
-        }
-      });
-      dropZone(zone, setImage);
-      setPasteHandler(setImage);
-      renderPhoto();
+      mountPhotoZone(root.querySelector('#photo'), piece, existing?.imageId, markDirty);
 
-      // Status en kleur
+      // Status (prioriteit en "gekocht" alleen bij wensen), prioriteit en kleur
+      const wishOnly = root.querySelectorAll('[data-wish-only]');
+      const syncWishOnly = () => wishOnly.forEach((el) => { el.hidden = piece.status === 'have'; });
       root.querySelectorAll('[data-status]').forEach((btn) => btn.addEventListener('click', () => {
         piece.status = btn.dataset.status;
         dirty = true;
         root.querySelectorAll('[data-status]').forEach((b) => b.setAttribute('aria-checked', String(b === btn)));
+        syncWishOnly();
       }));
+      root.querySelectorAll('[data-priority]').forEach((btn) => btn.addEventListener('click', () => {
+        piece.priority = btn.dataset.priority;
+        dirty = true;
+        root.querySelectorAll('[data-priority]').forEach((b) => b.setAttribute('aria-checked', String(b === btn)));
+      }));
+      syncWishOnly();
       root.querySelectorAll('[data-color]').forEach((btn) => btn.addEventListener('click', () => {
         piece.color = piece.color === btn.dataset.color ? null : btn.dataset.color;
         dirty = true;
@@ -272,8 +238,9 @@ export async function pieceEditor(id, presetStatus) {
           createdAt: existing?.createdAt || now,
           updatedAt: now,
         };
+        if (record.status !== 'have') { delete record.boughtAt; delete record.boughtPrice; }
         await db.put('pieces', record);
-        if (existing?.imageId && existing.imageId !== record.imageId) await images.remove(existing.imageId);
+        await commitPhoto(existing?.imageId, record.imageId);
         dirty = false;
         toast(existing ? 'Opgeslagen' : 'Toegevoegd aan je kast');
         location.hash = '#/kast';
@@ -285,6 +252,9 @@ export async function pieceEditor(id, presetStatus) {
       });
 
       if (existing) {
+        root.querySelector('#bought')?.addEventListener('click', () => {
+          purchaseSheet({ kind: 'piece', id: existing.id, name: existing.name, price: existing.price }, rerender);
+        });
         const pin = root.querySelector('#pin');
         pin.addEventListener('click', async () => {
           await db.put('board', { id: uid(), type: 'piece', refId: existing.id, createdAt: Date.now() });

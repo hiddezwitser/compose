@@ -1,15 +1,14 @@
 // Dashboard.
 
-import { db, getSetting } from '../db.js';
+import { getSetting } from '../db.js';
 import { images } from '../images.js';
-import { loadWardrobe, outfitMissing, colorOf, plural } from '../data.js';
+import { loadWishlist, outfitMissing, colorOf, plural, euro, sumPrices } from '../data.js';
 import { esc, icons, fmt, greeting, isStandalone } from '../ui.js';
 import { missingText } from './common.js';
 
 export async function home() {
-  const [w, wishCount, lastBackup] = await Promise.all([loadWardrobe(), db.count('wishes'), getSetting('lastBackup')]);
-  const wanted = w.pieces.filter((p) => p.status !== 'have');
-  const wishTotal = wishCount + wanted.length;
+  const [{ open, wardrobe: w }, lastBackup] = await Promise.all([loadWishlist(), getSetting('lastBackup')]);
+  const mustHave = open.filter((e) => e.priority === 'must');
 
   // Drie beelden uit het atelier: eerst moodboard, aangevuld met stukken uit de kast.
   const tiles = [];
@@ -78,8 +77,8 @@ export async function home() {
       </a>
 
       <a class="rule-row" href="#/wishlist">
-        <div><div class="label strong">Wishlist</div><div class="small">${plural(wishTotal, 'wens', 'wensen')}</div></div>
-        <span class="link">Bekijk</span>
+        <div><div class="label strong">Wishlist</div><div class="small">${plural(open.length, 'wens', 'wensen')}${mustHave.length ? ` · ${mustHave.length} must` : ''}</div></div>
+        <span class="serif home-total">${open.length ? euro(sumPrices(open)) : ''}</span>
       </a>
 
       ${backupNudge}

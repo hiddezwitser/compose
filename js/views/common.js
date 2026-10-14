@@ -1,8 +1,98 @@
 // Bouwstenen die meerdere schermen delen: stuk-tegels, flat lay, koppen.
 
 import { images } from '../images.js';
-import { STATUS, catName, colorOf, euro, plural } from '../data.js';
-import { esc, icons } from '../ui.js';
+import { STATUS, PRIORITIES, catName, colorOf, euro, plural, parsePrice, markBought } from '../data.js';
+import { esc, icons, toast, sheet, pickFile, readClipboardImage, setPasteHandler, dropZone } from '../ui.js';
+
+// ---------- Fotovak (kiezen / plakken / slepen) ----------
+// target: object met een imageId-veld dat wordt bijgewerkt. originalId: de foto zoals opgeslagen,
+// die pas bij opslaan mag verdwijnen; tussentijds gekozen foto's ruimen we direct op.
+export function mountPhotoZone(zone, target, originalId, onChange) {
+  const isTemp = (id) => id && id !== originalId;
+  const render = () => {
+    const url = images.url(target.imageId);
+    zone.classList.toggle('has-photo', !!url);
+    zone.classList.toggle('cutout', !!url && images.isCutout(target.imageId));
+    zone.innerHTML = url
+      ? `<img src="${url}" alt="">
+         <div class="photo-tools">
+           <button type="button" class="chip on-photo" data-pick>${icons.image}Andere</button>
+           <button type="button" class="chip on-photo" data-paste>${icons.paste}Plakken</button>
+           <button type="button" class="chip on-photo" data-clear aria-label="Foto verwijderen">${icons.close}</button>
+         </div>`
+      : `<div class="empty-line">Voeg een foto toe</div>
+         <p class="hint">Houd in Foto's het onderwerp ingedrukt, kies <b>Kopieer</b> en plak het hier. Of sleep een foto erheen.</p>
+         <div class="photo-actions">
+           <button type="button" class="btn small" data-pick>${icons.image}Kies foto</button>
+           <button type="button" class="btn small" data-paste>${icons.paste}Plakken</button>
+         </div>`;
+  };
+  const setImage = async (blob) => {
+    if (!blob) return;
+    zone.classList.add('busy');
+    try {
+      const newId = await images.save(blob);
+      if (isTemp(target.imageId)) await images.remove(target.imageId);
+      target.imageId = newId;
+      onChange?.();
+      render();
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      zone.classList.remove('busy');
+    }
+  };
+  zone.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-pick]')) setImage(await pickFile());
+    else if (e.target.closest('[data-paste]')) {
+      try { setImage(await readClipboardImage()); } catch (err) { if (err.name !== 'NotAllowedError') toast(err.message); }
+    } else if (e.target.closest('[data-clear]')) {
+      if (isTemp(target.imageId)) await images.remove(target.imageId);
+      target.imageId = null;
+      onChange?.();
+      render();
+    }
+  });
+  dropZone(zone, setImage);
+  setPasteHandler(setImage);
+  render();
+}
+
+// Na opslaan: de oude foto weg als die vervangen of verwijderd is.
+export async function commitPhoto(originalId, newId) {
+  if (originalId && originalId !== newId) await images.remove(originalId);
+}
+
+export function priorityControl(current) {
+  return `<div class="segmented" role="radiogroup" aria-label="Prioriteit">
+    ${PRIORITIES.map((p) => `<button type="button" role="radio" data-priority="${p.id}" aria-checked="${current === p.id}">${p.name}</button>`).join('')}
+  </div>`;
+}
+
+// ---------- Gekocht ----------
+// Vraagt wat je betaald hebt en wanneer, en markeert het daarna als gekocht.
+export function purchaseSheet(entry, onDone) {
+  const today = new Date().toISOString().slice(0, 10);
+  const price = entry.price != null ? String(entry.price).replace('.', ',') : '';
+  sheet(`
+    <div class="sheet-title">Gekocht</div>
+    <p class="hint">${esc(entry.name)}${entry.kind === 'piece' ? ' verhuist naar je kast als "Heb ik".' : ' verhuist naar je aankopen.'}</p>
+    <div class="row2">
+      <label class="field"><span class="label">Betaald (€)</span><input id="paid" inputmode="decimal" autocomplete="off" value="${esc(price)}"></label>
+      <label class="field"><span class="label">Datum</span><input id="paid-on" type="date" value="${today}" max="${today}"></label>
+    </div>
+    <button type="button" class="btn primary block" id="confirm">Bevestigen</button>`, (el, close) => {
+    el.querySelector('#confirm').addEventListener('click', async () => {
+      const paid = parsePrice(el.querySelector('#paid').value);
+      if (Number.isNaN(paid)) { toast('Bedrag is niet geldig'); return; }
+      const date = el.querySelector('#paid-on').value || today;
+      await markBought(entry, paid, date);
+      close();
+      toast('Gefeliciteerd met je aankoop');
+      onDone?.();
+    });
+  });
+}
 
 // Beeld van een stuk: foto (uitgeknipt of gewoon) of een kleurvlak.
 export function pieceVisual(piece, cls = 'tile') {

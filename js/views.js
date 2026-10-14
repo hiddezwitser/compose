@@ -5,13 +5,8 @@ import { kast, pieceEditor } from './views/kast.js';
 import { board, outfitsList, profile } from './views/atelier.js';
 import { outfitEditor } from './views/outfit.js';
 import { settings } from './views/settings.js';
+import { wishlist, wishEditor, boughtList } from './views/wishlist.js';
 import { upcoming } from './views/common.js';
-
-const wishlist = upcoming({
-  title: 'Wishlist', sub: 'Overzicht van wat je wilt en wat het kost.', numeral: 'III',
-  line: 'Bewust kiezen, helder overzicht.',
-  note: 'Kleding, camera, muziek en gadgets met prijs en prioriteit. Kleding die je in je kast op "Wil ik" zet, komt hier straks vanzelf in. Volgt in fase 3.',
-});
 
 const budget = upcoming({
   title: 'Budget', sub: 'Per maand, per categorie.', numeral: 'IV',
@@ -31,5 +26,8 @@ export const routes = [
   { path: /^kast\/nieuw(?:\/(want|consider))?$/, tab: 'kast', view: (m) => pieceEditor(null, m[1]) },
   { path: /^kast\/([\w-]+)$/, tab: 'kast', view: (m) => pieceEditor(m[1]) },
   { path: /^wishlist$/, tab: 'wishlist', view: wishlist },
+  { path: /^wishlist\/nieuw$/, tab: 'wishlist', view: () => wishEditor(null) },
+  { path: /^wishlist\/gekocht$/, tab: 'wishlist', view: boughtList },
+  { path: /^wishlist\/([\w-]+)$/, tab: 'wishlist', view: (m) => wishEditor(m[1]) },
   { path: /^budget$/, tab: 'budget', view: budget },
 ];

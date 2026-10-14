@@ -2,7 +2,7 @@
 // en zorgt dat een nieuwe versie netjes wordt opgepikt.
 // Bij elke update: VERSION ophogen (ook in js/ui.js).
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const APP_CACHE = `compose-app-${VERSION}`;
 const FONT_CACHE = 'compose-fonts';
 
@@ -19,6 +19,7 @@ const ASSETS = [
   './js/views/atelier.js',
   './js/views/outfit.js',
   './js/views/settings.js',
+  './js/views/wishlist.js',
   './js/ui.js',
   './js/db.js',
   './js/data.js',

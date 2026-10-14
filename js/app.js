@@ -42,8 +42,8 @@ async function render() {
 
 // Foto's die nergens meer bij horen (bijv. gekozen en daarna geannuleerd) opruimen.
 async function cleanOrphanImages() {
-  const [pieces, board, imgs] = await Promise.all([db.all('pieces'), db.all('board'), db.all('images')]);
-  const used = new Set([...pieces.map((p) => p.imageId), ...board.map((b) => b.imageId)].filter(Boolean));
+  const [pieces, board, wishes, imgs] = await Promise.all([db.all('pieces'), db.all('board'), db.all('wishes'), db.all('images')]);
+  const used = new Set([...pieces, ...board, ...wishes].map((x) => x.imageId).filter(Boolean));
   for (const img of imgs) if (!used.has(img.id)) await images.remove(img.id);
 }
 
