@@ -3,6 +3,7 @@
 
 import { dumpAll, replaceAll, setSetting } from './db.js';
 import { VERSION } from './ui.js';
+import { images } from './images.js';
 
 const FORMAT = 'compose-backup';
 
@@ -23,7 +24,7 @@ async function dataUrlToBlob(dataUrl) {
 export async function createBackupFile() {
   const data = await dumpAll();
   data.images = await Promise.all(
-    data.images.map(async (img) => ({ id: img.id, data: await blobToDataUrl(img.blob) })),
+    data.images.map(async ({ blob, ...rest }) => ({ ...rest, data: await blobToDataUrl(blob) })),
   );
   const payload = { format: FORMAT, formatVersion: 1, appVersion: VERSION, exportedAt: new Date().toISOString(), data };
   const stamp = new Date().toISOString().slice(0, 10);
@@ -65,8 +66,9 @@ export async function restoreBackupFile(file) {
 
   const data = { ...payload.data };
   data.images = await Promise.all(
-    (data.images || []).map(async (img) => ({ id: img.id, blob: await dataUrlToBlob(img.data) })),
+    (data.images || []).map(async ({ data: url, ...rest }) => ({ ...rest, blob: await dataUrlToBlob(url) })),
   );
   await replaceAll(data);
+  images.reset();
   return payload.exportedAt;
 }

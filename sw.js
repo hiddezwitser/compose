@@ -2,7 +2,7 @@
 // en zorgt dat een nieuwe versie netjes wordt opgepikt.
 // Bij elke update: VERSION ophogen (ook in js/ui.js).
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const APP_CACHE = `compose-app-${VERSION}`;
 const FONT_CACHE = 'compose-fonts';
 
@@ -13,8 +13,16 @@ const ASSETS = [
   './css/app.css',
   './js/app.js',
   './js/views.js',
+  './js/views/common.js',
+  './js/views/home.js',
+  './js/views/kast.js',
+  './js/views/atelier.js',
+  './js/views/outfit.js',
+  './js/views/settings.js',
   './js/ui.js',
   './js/db.js',
+  './js/data.js',
+  './js/images.js',
   './js/theme.js',
   './js/backup.js',
   './icons/apple-touch-icon.png',

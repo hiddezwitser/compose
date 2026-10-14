@@ -2,35 +2,54 @@
 
 import { applyTheme } from './theme.js';
 import { routes } from './views.js';
-import { toast } from './ui.js';
+import { db } from './db.js';
+import { images } from './images.js';
+import { toast, setPasteHandler } from './ui.js';
 
 const view = document.getElementById('view');
 const tabs = document.querySelectorAll('.tabbar a');
-const TAB_FOR = { instellingen: 'home' };
 
 let renderId = 0;
+let lastPath = null;
 
 async function render() {
-  const name = location.hash.replace(/^#\/?/, '') || 'home';
-  const route = routes[name] ? name : 'home';
+  const path = location.hash.replace(/^#\/?/, '') || 'home';
+  let match = null;
+  let route = routes.find((r) => (match = path.match(r.path)));
+  if (!route) { route = routes[0]; match = []; }
   const id = ++renderId;
 
-  const screen = await routes[route]();
+  let screen;
+  try {
+    screen = await route.view(match);
+  } catch (err) {
+    console.error(err);
+    screen = { html: `<div class="empty"><div class="line">Er ging iets mis.</div><p class="hint">${String(err.message || err)}</p></div>` };
+  }
   if (id !== renderId) return; // er is intussen al verder genavigeerd
 
+  setPasteHandler(null);
   view.innerHTML = screen.html;
-  screen.mount?.(view, render);
+  screen.mount?.(view, { rerender: render });
 
-  const active = TAB_FOR[route] || route;
   tabs.forEach((a) => {
-    if (a.dataset.tab === active) a.setAttribute('aria-current', 'page');
+    if (a.dataset.tab === route.tab) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   });
-  window.scrollTo(0, 0);
+  if (path !== lastPath) window.scrollTo(0, 0);
+  lastPath = path;
+}
+
+// Foto's die nergens meer bij horen (bijv. gekozen en daarna geannuleerd) opruimen.
+async function cleanOrphanImages() {
+  const [pieces, board, imgs] = await Promise.all([db.all('pieces'), db.all('board'), db.all('images')]);
+  const used = new Set([...pieces.map((p) => p.imageId), ...board.map((b) => b.imageId)].filter(Boolean));
+  for (const img of imgs) if (!used.has(img.id)) await images.remove(img.id);
 }
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
+  if (location.hostname === 'localhost') return; // tijdens ontwikkelen altijd de nieuwste bestanden
 
   navigator.serviceWorker.register('./sw.js').then((reg) => {
     const offerUpdate = (worker) => toast('Nieuwe versie beschikbaar', {
@@ -61,7 +80,7 @@ function registerServiceWorker() {
 
 applyTheme();
 window.addEventListener('hashchange', render);
-render();
+cleanOrphanImages().catch(() => {}).finally(render);
 registerServiceWorker();
 
 // Vraag de browser om de opslag niet automatisch op te schonen.
