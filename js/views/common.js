@@ -3,6 +3,7 @@
 import { images } from '../images.js';
 import { STATUS, PRIORITIES, catName, colorOf, euro, plural, parsePrice, markBought } from '../data.js';
 import { esc, icons, toast, sheet, pickFile, readClipboardImage, setPasteHandler, dropZone } from '../ui.js';
+import { proxyUrl, fetchProduct, fetchImage } from '../linkfill.js';
 
 // ---------- Fotovak (kiezen / plakken / slepen) ----------
 // target: object met een imageId-veld dat wordt bijgewerkt. originalId: de foto zoals opgeslagen,
@@ -56,6 +57,75 @@ export function mountPhotoZone(zone, target, originalId, onChange) {
   dropZone(zone, setImage);
   setPasteHandler(setImage);
   render();
+  return { setImage };
+}
+
+// ---------- Linkveld met "Plak link" en slim invullen ----------
+
+export function linkField(link) {
+  const safe = /^https?:\/\//i.test(link || '') ? link : '';
+  return `
+    <div class="field">
+      <span class="label">Link webshop ${safe ? `<a href="${esc(safe)}" target="_blank" rel="noopener" class="field-link">Openen</a>` : ''}</span>
+      <div class="link-row">
+        <input id="link" type="url" inputmode="url" autocomplete="off" placeholder="https://" value="${esc(link)}" aria-label="Link webshop">
+        <button type="button" class="chip" id="paste-link">${icons.paste}Plak link</button>
+      </div>
+      <p class="small link-status" id="link-status" hidden></p>
+    </div>`;
+}
+
+// apply(data) vult het formulier aan en geeft de namen terug van wat er is ingevuld.
+export function mountLinkField(root, apply) {
+  const input = root.querySelector('#link');
+  const status = root.querySelector('#link-status');
+  let last = input.value.trim();
+  const say = (msg) => { status.hidden = !msg; status.textContent = msg || ''; };
+
+  const fill = async () => {
+    const link = input.value.trim();
+    if (!/^https?:\/\/\S+\.\S+/i.test(link) || link === last) return;
+    last = link;
+    if (!(await proxyUrl())) {
+      say('Tip: zet "Slim invullen" aan in Instellingen, dan vult Composé naam, prijs en foto zelf in.');
+      return;
+    }
+    say('Gegevens ophalen…');
+    try {
+      const data = await fetchProduct(link);
+      const filled = await apply(data);
+      say(filled.length ? `Ingevuld: ${filled.join(', ')}. Controleer het even.` : 'Alles was al ingevuld.');
+    } catch (err) {
+      say(err.name === 'TypeError' || err.name === 'TimeoutError'
+        ? 'Kon de koppeling niet bereiken. Vul het zelf in, of probeer het later opnieuw.'
+        : `${err.message}. Vul het zelf in.`);
+    }
+  };
+
+  input.addEventListener('change', fill);
+  input.addEventListener('paste', () => setTimeout(fill, 0));
+  root.querySelector('#paste-link').addEventListener('click', async () => {
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      if (!/^https?:\/\//i.test(text)) { toast('Geen link op het klembord'); return; }
+      input.value = text;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      fill();
+    } catch (err) {
+      if (err.name !== 'NotAllowedError') toast('Plakken lukt niet; plak de link handmatig in het veld');
+    }
+  });
+}
+
+// Productfoto van de webshop als foto gebruiken (alleen als er nog geen foto is).
+export async function usePhotoFrom(data, target, photo) {
+  if (target.imageId || !data.image) return false;
+  try {
+    await photo.setImage(await fetchImage(data.image));
+    return !!target.imageId;
+  } catch (e) {
+    return false;
+  }
 }
 
 // Na opslaan: de oude foto weg als die vervangen of verwijderd is.

@@ -560,6 +560,11 @@ a.rule-row { color: inherit; }
 .month-total, .home-total { font-size: 19px; white-space: nowrap; }
 .sheet-list .small.block { margin-top: 1px; }
 
+.link-row { display: flex; align-items: flex-end; gap: 10px; }
+.link-row input { flex: 1; min-width: 0; }
+.link-row .chip { margin-bottom: 4px; }
+.link-status { margin: 2px 0 0; }
+
 @media (prefers-reduced-motion: no-preference) {
   .sheet { animation: sheet-up .24s ease; }
   @keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }

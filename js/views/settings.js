@@ -1,6 +1,7 @@
 // Instellingen: thema, back-up, opslag.
 
-import { getSetting } from '../db.js';
+import { getSetting, setSetting } from '../db.js';
+import { testProxy } from '../linkfill.js';
 import { getTheme, setTheme } from '../theme.js';
 import { createBackupFile, saveBackupFile, restoreBackupFile } from '../backup.js';
 import { VERSION, icons, fmt, toast, isStandalone, esc } from '../ui.js';
@@ -9,6 +10,7 @@ import { backLink } from './common.js';
 export async function settings() {
   const theme = getTheme();
   const lastBackup = await getSetting('lastBackup');
+  const proxy = await getSetting('proxyUrl', '');
   const choice = (value, label) =>
     `<button type="button" role="radio" aria-checked="${theme === value}" data-theme-choice="${value}">${label}</button>`;
 
@@ -42,6 +44,17 @@ export async function settings() {
           <div><span>Opslag in gebruik</span><span class="v" id="usage">…</span></div>
           <div><span>Beschermd tegen opschonen</span><span class="v" id="persisted">…</span></div>
         </div>
+      </section>
+
+      <section class="group">
+        <div class="label strong">Slim invullen</div>
+        <p class="hint">Plak een webshop-link bij een wens of kledingstuk, en Composé vult naam, prijs, merk en foto zelf in. Daarvoor is je eigen Cloudflare-koppeling nodig.</p>
+        <label class="field">
+          <span class="label">Adres van je koppeling</span>
+          <input id="proxy" type="url" inputmode="url" autocomplete="off" placeholder="https://compose.jouwnaam.workers.dev" value="${esc(proxy)}">
+        </label>
+        <button type="button" class="btn block" id="proxy-save">Opslaan en testen</button>
+        <p class="small" id="proxy-status">${proxy ? 'Ingesteld.' : 'Nog niet ingesteld.'}</p>
       </section>
 
       <section class="group">
@@ -97,6 +110,29 @@ export async function settings() {
           rerender();
         } catch (err) {
           toast(err.message);
+        }
+      });
+
+      const proxyInput = root.querySelector('#proxy');
+      const proxyStatus = root.querySelector('#proxy-status');
+      root.querySelector('#proxy-save').addEventListener('click', async () => {
+        let url = proxyInput.value.trim().replace(/\/+$/, '');
+        if (!url) {
+          await setSetting('proxyUrl', '');
+          proxyStatus.textContent = 'Uitgezet.';
+          return;
+        }
+        if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+        proxyInput.value = url;
+        proxyStatus.textContent = 'Testen…';
+        try {
+          await testProxy(url);
+          await setSetting('proxyUrl', url);
+          proxyStatus.innerHTML = '<span class="ok">Werkt. Slim invullen staat aan.</span>';
+        } catch (err) {
+          proxyStatus.textContent = err.name === 'TypeError' || err.name === 'TimeoutError'
+            ? 'Geen verbinding. Klopt het adres, en staat je GitHub-adres in de Worker-code?'
+            : `Mislukt: ${err.message}`;
         }
       });
 

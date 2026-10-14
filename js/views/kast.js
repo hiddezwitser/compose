@@ -5,7 +5,10 @@ import {
   CATEGORIES, STATUS, COLORS, occasionName, loadWardrobe, gapInsight, deletePiece, plural, parsePrice, euro,
 } from '../data.js';
 import { esc, icons, toast, fmt } from '../ui.js';
-import { pieceCard, backLink, mountPhotoZone, commitPhoto, priorityControl, purchaseSheet } from './common.js';
+import {
+  pieceCard, backLink, mountPhotoZone, commitPhoto, priorityControl, purchaseSheet, linkField, mountLinkField, usePhotoFrom,
+} from './common.js';
+import { guessPieceCategory, guessColor } from '../linkfill.js';
 
 // Filter blijft bewaard zolang de app open is.
 const filter = { status: 'all', cat: 'all' };
@@ -115,7 +118,6 @@ export async function pieceEditor(id, presetStatus) {
     `<button type="button" role="radio" data-status="${s}" aria-checked="${piece.status === s}">${STATUS[s].label}</button>`;
   const swatch = (c) =>
     `<button type="button" class="swatch" data-color="${c.key}" aria-pressed="${piece.color === c.key}" aria-label="${c.name}" title="${c.name}" style="background:${c.hex}"></button>`;
-  const safeLink = /^https?:\/\//i.test(piece.link || '') ? piece.link : '';
 
   return {
     html: `
@@ -125,6 +127,8 @@ export async function pieceEditor(id, presetStatus) {
       </div>
 
       <div class="photo-zone" id="photo"></div>
+
+      ${linkField(piece.link)}
 
       <label class="field">
         <span class="label">Naam</span>
@@ -158,10 +162,6 @@ export async function pieceEditor(id, presetStatus) {
         <label class="field"><span class="label">Prijs (€)</span><input id="price" inputmode="decimal" autocomplete="off" placeholder="0" value="${piece.price != null ? esc(String(piece.price).replace('.', ',')) : ''}"></label>
       </div>
 
-      <label class="field">
-        <span class="label">Link ${safeLink ? `<a href="${esc(safeLink)}" target="_blank" rel="noopener" class="field-link">Openen</a>` : ''}</span>
-        <input id="link" type="url" inputmode="url" autocomplete="off" placeholder="https://" value="${esc(piece.link)}">
-      </label>
 
       <label class="field">
         <span class="label">Notitie</span>
@@ -187,7 +187,33 @@ export async function pieceEditor(id, presetStatus) {
       const markDirty = () => { dirty = true; };
       root.querySelectorAll('input, textarea, select').forEach((el) => el.addEventListener('input', markDirty));
 
-      mountPhotoZone(root.querySelector('#photo'), piece, existing?.imageId, markDirty);
+      const photo = mountPhotoZone(root.querySelector('#photo'), piece, existing?.imageId, markDirty);
+
+      // Slim invullen vanaf een link: alleen lege velden, categorie alleen als die nog niet gekozen is.
+      let categoryTouched = !!existing;
+      root.querySelector('#category').addEventListener('change', () => { categoryTouched = true; });
+      const setColor = (key) => {
+        piece.color = key;
+        root.querySelectorAll('[data-color]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.color === key)));
+        root.querySelector('#color-name').textContent = COLORS.find((c) => c.key === key)?.name || '';
+      };
+      mountLinkField(root, async (data) => {
+        const filled = [];
+        const fillInput = (sel, value, label) => {
+          const el = root.querySelector(sel);
+          if (!el.value.trim() && value != null && value !== '') { el.value = value; filled.push(label); }
+        };
+        fillInput('#name', data.name, 'naam');
+        fillInput('#brand', data.brand, 'merk');
+        fillInput('#price', data.price != null ? String(data.price).replace('.', ',') : null, 'prijs');
+        const cat = guessPieceCategory(data);
+        if (!categoryTouched && cat) { root.querySelector('#category').value = cat; filled.push('categorie'); }
+        const color = guessColor(data);
+        if (!piece.color && color) { setColor(color); filled.push('kleur'); }
+        if (await usePhotoFrom(data, piece, photo)) filled.push('foto');
+        if (filled.length) dirty = true;
+        return filled;
+      });
 
       // Status (prioriteit en "gekocht" alleen bij wensen), prioriteit en kleur
       const wishOnly = root.querySelectorAll('[data-wish-only]');
@@ -205,10 +231,8 @@ export async function pieceEditor(id, presetStatus) {
       }));
       syncWishOnly();
       root.querySelectorAll('[data-color]').forEach((btn) => btn.addEventListener('click', () => {
-        piece.color = piece.color === btn.dataset.color ? null : btn.dataset.color;
+        setColor(piece.color === btn.dataset.color ? null : btn.dataset.color);
         dirty = true;
-        root.querySelectorAll('[data-color]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.color === piece.color)));
-        root.querySelector('#color-name').textContent = COLORS.find((c) => c.key === piece.color)?.name || '';
       }));
 
       // Opslaan

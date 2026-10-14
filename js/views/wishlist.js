@@ -8,7 +8,10 @@ import {
   loadWishlist, sumPrices, unmarkBought, deleteWish,
 } from '../data.js';
 import { esc, icons, toast, sheet, fmt } from '../ui.js';
-import { backLink, mountPhotoZone, commitPhoto, priorityControl, purchaseSheet } from './common.js';
+import {
+  backLink, mountPhotoZone, commitPhoto, priorityControl, purchaseSheet, linkField, mountLinkField, usePhotoFrom,
+} from './common.js';
+import { guessWishCategory } from '../linkfill.js';
 
 const view = { cat: 'all', sort: 'priority' };
 const PRIO_NAME = Object.fromEntries(PRIORITIES.map((p) => [p.id, p.name]));
@@ -179,7 +182,6 @@ export async function wishEditor(id) {
     name: '', category: 'camera', priority: 'nice', price: null, link: '', note: '', imageId: null, status: 'wanted',
   };
   const isBought = existing?.status === 'bought';
-  const safeLink = /^https?:\/\//i.test(wish.link || '') ? wish.link : '';
 
   return {
     html: `
@@ -189,6 +191,8 @@ export async function wishEditor(id) {
       </div>
 
       <div class="photo-zone" id="photo"></div>
+
+      ${linkField(wish.link)}
 
       <label class="field">
         <span class="label">Naam</span>
@@ -208,10 +212,7 @@ export async function wishEditor(id) {
         ${priorityControl(wish.priority)}
       </div>`}
 
-      <div class="row2">
-        <label class="field"><span class="label">Prijs (€)</span><input id="price" inputmode="decimal" autocomplete="off" placeholder="0" value="${wish.price != null ? esc(String(wish.price).replace('.', ',')) : ''}"></label>
-        <label class="field"><span class="label">Link ${safeLink ? `<a href="${esc(safeLink)}" target="_blank" rel="noopener" class="field-link">Openen</a>` : ''}</span><input id="link" type="url" inputmode="url" autocomplete="off" placeholder="https://" value="${esc(wish.link)}"></label>
-      </div>
+      <label class="field"><span class="label">Prijs (€)</span><input id="price" inputmode="decimal" autocomplete="off" placeholder="0" value="${wish.price != null ? esc(String(wish.price).replace('.', ',')) : ''}"></label>
 
       <label class="field">
         <span class="label">Notitie</span>
@@ -231,13 +232,33 @@ export async function wishEditor(id) {
       let dirty = false;
       const markDirty = () => { dirty = true; };
       root.querySelectorAll('input, textarea').forEach((el) => el.addEventListener('input', markDirty));
-      mountPhotoZone(root.querySelector('#photo'), wish, existing?.imageId, markDirty);
+      const photo = mountPhotoZone(root.querySelector('#photo'), wish, existing?.imageId, markDirty);
 
+      let categoryTouched = !!existing;
+      const setCategory = (id) => {
+        wish.category = id;
+        root.querySelectorAll('[data-category]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.category === id)));
+      };
       root.querySelectorAll('[data-category]').forEach((btn) => btn.addEventListener('click', () => {
-        wish.category = btn.dataset.category;
+        setCategory(btn.dataset.category);
+        categoryTouched = true;
         dirty = true;
-        root.querySelectorAll('[data-category]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
       }));
+
+      mountLinkField(root, async (data) => {
+        const filled = [];
+        const fillInput = (sel, value, label) => {
+          const el = root.querySelector(sel);
+          if (!el.value.trim() && value != null && value !== '') { el.value = value; filled.push(label); }
+        };
+        fillInput('#name', data.name, 'naam');
+        fillInput('#price', data.price != null ? String(data.price).replace('.', ',') : null, 'prijs');
+        const cat = guessWishCategory(data);
+        if (!categoryTouched && cat) { setCategory(cat); filled.push('categorie'); }
+        if (await usePhotoFrom(data, wish, photo)) filled.push('foto');
+        if (filled.length) dirty = true;
+        return filled;
+      });
       root.querySelectorAll('[data-priority]').forEach((btn) => btn.addEventListener('click', () => {
         wish.priority = btn.dataset.priority;
         dirty = true;
